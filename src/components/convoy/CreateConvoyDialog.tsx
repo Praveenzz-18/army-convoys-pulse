@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Convoy, Priority } from '@/types/convoy';
-import { Plus, X, MapPin } from 'lucide-react';
+import { Plus, X, MapPin, Sparkles, Loader2 } from 'lucide-react';
+import { getRouteRecommendation } from '@/services/aiService';
 
 interface CreateConvoyDialogProps {
   open: boolean;
@@ -20,6 +21,7 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
   const { toast } = useToast();
   const { isAuthorized, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -133,6 +135,45 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
     setCheckpoints(updated);
   };
 
+  const handleAiRecommendation = async () => {
+    if (!formData.origin || !formData.destination) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please provide origin and destination for AI recommendation.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      const recommendation = await getRouteRecommendation(formData.origin, formData.destination);
+      setFormData({
+        ...formData,
+        notes: `${recommendation.recommendation}\n\nEstimated Distance: ${recommendation.distance}\nEstimated Time: ${recommendation.estimatedTime}\nSafety Score: ${recommendation.safetyScore}/100`,
+        cargo: formData.cargo || `Distance: ${recommendation.distance}`,
+      });
+      
+      // Update checkpoints if Gemini suggested something (mocked as hazards for now)
+      if (recommendation.hazards.length > 0) {
+        setCheckpoints(recommendation.hazards.map(h => ({ name: 'Caution: ' + h, location: '' })));
+      }
+
+      toast({
+        title: 'AI Recommendation Ready',
+        description: 'Optimized route and tactical advice have been generated.',
+      });
+    } catch (error) {
+      toast({
+        title: 'AI Error',
+        description: 'Failed to get route recommendation. Please check your API key.',
+        variant: 'destructive',
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   if (!canCreate) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -180,12 +221,25 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
             </div>
             <div>
               <Label htmlFor="destination">Destination *</Label>
-              <Input
-                id="destination"
-                placeholder="End location"
-                value={formData.destination}
-                onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="destination"
+                  placeholder="End location"
+                  value={formData.destination}
+                  onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={handleAiRecommendation}
+                  disabled={aiLoading}
+                  className="shrink-0 bg-primary/10 hover:bg-primary/20 border-primary/20 text-primary"
+                  title="Get AI Route Recommendation"
+                >
+                  {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                </Button>
+              </div>
             </div>
             <div>
               <Label htmlFor="departureTime">Departure Time *</Label>

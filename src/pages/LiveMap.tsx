@@ -1,12 +1,48 @@
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { mockConvoys } from '@/data/mockData';
-import { MapPin, Navigation, RefreshCw, Maximize2, Layers, Truck } from 'lucide-react';
+import { MapPin, Navigation, RefreshCw, Maximize2, Layers } from 'lucide-react';
+import MapContainer from '@/components/map/MapContainer';
+import { db } from '@/database/firebase/client';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { Convoy } from '@/types/convoy';
 
 const LiveMap = () => {
-  const activeConvoys = mockConvoys.filter(c => c.status === 'active' || c.status === 'delayed');
+  const [convoys, setConvoys] = useState<Convoy[]>(mockConvoys);
+  const activeConvoys = convoys.filter(c => c.status === 'active' || c.status === 'delayed');
+
+  useEffect(() => {
+    // Real-time listener for convoys in Firestore
+    const convoysRef = collection(db, 'convoys');
+    const q = query(convoysRef, where('status', 'in', ['active', 'delayed']));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const updatedConvoys = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Convoy[];
+      
+      if (updatedConvoys.length > 0) {
+        setConvoys(prev => {
+          // Merge real data with mock for demo purposes if needed
+          const merged = [...prev];
+          updatedConvoys.forEach(uc => {
+            const index = merged.findIndex(c => c.id === uc.id);
+            if (index !== -1) merged[index] = uc;
+            else merged.push(uc);
+          });
+          return merged;
+        });
+      }
+    }, (error) => {
+      console.warn("Firestore error (using mock data):", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <DashboardLayout title="Live Map" subtitle="Real-time convoy tracking and positioning">
@@ -32,66 +68,11 @@ const LiveMap = () => {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {/* Map Placeholder - In production, this would be a real map integration */}
               <div className="relative h-[600px] bg-muted/30">
-                {/* India Map SVG Background */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-10">
-                  <div className="text-[300px] font-bold text-primary">🇮🇳</div>
-                </div>
+                <MapContainer convoys={activeConvoys} />
                 
-                {/* Map Grid Overlay */}
-                <div className="absolute inset-0" style={{
-                  backgroundImage: `
-                    linear-gradient(rgba(34, 197, 94, 0.1) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(34, 197, 94, 0.1) 1px, transparent 1px)
-                  `,
-                  backgroundSize: '50px 50px',
-                }} />
-
-                {/* Convoy Markers */}
-                {activeConvoys.map((convoy, index) => {
-                  // Calculate positions based on progress
-                  const positions = [
-                    { top: '20%', left: '70%' },
-                    { top: '60%', left: '30%' },
-                    { top: '40%', left: '50%' },
-                    { top: '70%', left: '60%' },
-                  ];
-                  const pos = positions[index % positions.length];
-                  
-                  return (
-                    <div
-                      key={convoy.id}
-                      className="absolute transform -translate-x-1/2 -translate-y-1/2 animate-pulse-glow cursor-pointer group"
-                      style={{ top: pos.top, left: pos.left }}
-                    >
-                      <div className={`
-                        w-8 h-8 rounded-full flex items-center justify-center
-                        ${convoy.status === 'delayed' ? 'bg-destructive' : 'bg-primary'}
-                        shadow-lg
-                      `}>
-                        <Truck className="w-4 h-4 text-primary-foreground" />
-                      </div>
-                      {/* Tooltip */}
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <div className="bg-card border border-border rounded-lg p-3 shadow-lg min-w-[200px]">
-                          <p className="font-semibold text-sm">{convoy.name}</p>
-                          <p className="text-xs text-muted-foreground">{convoy.id}</p>
-                          <div className="mt-2 flex items-center gap-2 text-xs">
-                            <MapPin className="w-3 h-3" />
-                            <span>{convoy.origin} → {convoy.destination}</span>
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Progress: {convoy.progress}%
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
                 {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm border border-border rounded-lg p-3">
+                <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm border border-border rounded-lg p-3 z-[1000]">
                   <p className="text-xs font-semibold mb-2">Legend</p>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-xs">
@@ -106,9 +87,10 @@ const LiveMap = () => {
                 </div>
 
                 {/* Map Notice */}
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2">
-                  <p className="text-xs text-muted-foreground">
-                    🗺️ Interactive map integration available with Google Maps / Mapbox API
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2 z-[1000]">
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <Navigation className="w-3 h-3 text-primary animate-pulse" />
+                    Real-time Tracking Enabled (Leaflet + Firestore)
                   </p>
                 </div>
               </div>

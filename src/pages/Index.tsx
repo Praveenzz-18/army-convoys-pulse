@@ -1,9 +1,24 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Shield, Truck, Route, Map, Clock, Users, BarChart3, Bell, ChevronRight, Zap, Target, Globe } from 'lucide-react';
+
+const BACKGROUND_IMAGES = [
+  '/hero-1.jpg',
+  '/hero-2.jpg'
+];
 const Index = () => {
+  const [currentBg, setCurrentBg] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentBg((prev) => (prev + 1) % BACKGROUND_IMAGES.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, []);
+
   const features = [{
     icon: Route,
     title: 'Convoy Planning',
@@ -30,8 +45,27 @@ const Index = () => {
     description: 'Monitor deployed personnel and assignments'
   }];
   return <div className="min-h-screen bg-background relative overflow-hidden">
+      {/* Background Images Slideshow */}
+      <div className="absolute inset-0 z-0">
+        {BACKGROUND_IMAGES.map((img, index) => (
+          <div
+            key={img}
+            className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+              index === currentBg ? 'opacity-30' : 'opacity-0'
+            }`}
+            style={{
+              backgroundImage: `url(${img})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }}
+          />
+        ))}
+        {/* Overlay for better text readability */}
+        <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px]" />
+      </div>
+
       {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-5">
+      <div className="absolute inset-0 opacity-5 z-[1]">
         <div className="absolute inset-0" style={{
         backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%2322c55e' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
       }} />

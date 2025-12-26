@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,37 +6,63 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { Shield, Eye, EyeOff, Lock, Mail, Users } from 'lucide-react';
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('user');
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const {
-    login
+    login,
+    register,
+    isAuthenticated,
+    loading: authLoading
   } = useAuth();
   const {
     toast
   } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, navigate]);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const success = await login(email, password);
-    if (success) {
+    try {
+      if (mode === 'login') {
+        const success = await login(email, password);
+        if (success) {
+          toast({
+            title: 'Welcome Back!',
+            description: 'Successfully logged in to Army Logistics Command Center.'
+          });
+          navigate('/dashboard');
+        }
+      } else {
+        const success = await register(email, password, name, role);
+        if (success) {
+          toast({
+            title: 'Account Created',
+            description: `Welcome to the unit, ${name}. You are registered as ${role === 'commando' ? 'a Commando' : 'a Soldier'}.`
+          });
+          navigate('/dashboard');
+        }
+      }
+    } catch (error: any) {
       toast({
-        title: 'Welcome Back!',
-        description: 'Successfully logged in to Army Logistics Command Center.'
-      });
-      navigate('/dashboard');
-    } else {
-      toast({
-        title: 'Login Failed',
-        description: 'Invalid credentials. Please try again.',
+        title: mode === 'login' ? 'Login Failed' : 'Registration Failed',
+        description: error.message || 'An error occurred. Please try again.',
         variant: 'destructive'
       });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
   return <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
       {/* Background Pattern */}
@@ -52,12 +78,68 @@ const Login = () => {
             <Shield className="w-8 h-8 text-primary" />
           </div>
           <div>
-            <CardTitle className="text-2xl">Army Logistics</CardTitle>
-            <CardDescription>Command Center Access</CardDescription>
+            <CardTitle className="text-2xl">
+              {mode === 'login' ? 'Army Logistics' : 'Join the Unit'}
+            </CardTitle>
+            <CardDescription>
+              {mode === 'login' ? 'Command Center Access' : 'Create your secure personnel profile'}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
+          {/* Mode Toggle */}
+          <div className="flex bg-muted p-1 rounded-lg mb-6">
+            <button
+              onClick={() => setMode('login')}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${
+                mode === 'login' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              Login
+            </button>
+            <button
+              onClick={() => setMode('signup')}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${
+                mode === 'signup' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              Register
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'signup' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <div className="relative">
+                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input id="name" placeholder="E.g. John Doe" value={name} onChange={e => setName(e.target.value)} className="pl-10" required />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Personnel Type</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={role === 'user' ? 'default' : 'outline'}
+                      onClick={() => setRole('user')}
+                      className="w-full"
+                    >
+                      Soldier
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={role === 'commando' ? 'default' : 'outline'}
+                      onClick={() => setRole('commando')}
+                      className="w-full"
+                    >
+                      Commando
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email / Service ID</Label>
               <div className="relative">
@@ -76,12 +158,16 @@ const Login = () => {
               </div>
             </div>
             <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
-              {loading ? 'Authenticating...' : 'Access Command Center'}
+              {loading ? 'Processing...' : mode === 'login' ? 'Access Command Center' : 'Establish Profile'}
             </Button>
           </form>
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
-            <p>Demo credentials: any email + password (6+ chars)</p>
+            {mode === 'login' ? (
+              <p>Demo credentials: any registered email + password</p>
+            ) : (
+              <p>Enter your details to create a secure Firebase account.</p>
+            )}
           </div>
 
           <div className="mt-4 text-center">
