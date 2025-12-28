@@ -31,6 +31,7 @@ export interface Convoy {
   progress: number;
   notes?: string;
   cargo?: string;
+  cargoWeight?: number;
   createdAt: string;
   updatedAt: string;
 }

@@ -24,6 +24,8 @@ interface ConvoyDetailDialogProps {
   convoy: Convoy | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDelete?: (id: string) => void;
+  onEdit?: (convoy: Convoy) => void;
 }
 
 const statusConfig = {
@@ -39,7 +41,7 @@ const priorityConfig = {
   low: { label: 'Low', className: 'bg-muted text-muted-foreground border-muted' },
 };
 
-export const ConvoyDetailDialog = ({ convoy, open, onOpenChange }: ConvoyDetailDialogProps) => {
+export const ConvoyDetailDialog = ({ convoy, open, onOpenChange, onDelete, onEdit }: ConvoyDetailDialogProps) => {
   if (!convoy) return null;
 
   const status = statusConfig[convoy.status];
@@ -104,6 +106,11 @@ export const ConvoyDetailDialog = ({ convoy, open, onOpenChange }: ConvoyDetailD
               <Users className="w-5 h-5 text-primary mb-2" />
               <p className="text-2xl font-bold">{convoy.personnelCount}</p>
               <p className="text-xs text-muted-foreground">Personnel</p>
+            </div>
+            <div className="p-4 bg-card rounded-lg border border-border">
+              <Package className="w-5 h-5 text-primary mb-2" />
+              <p className="text-2xl font-bold">{convoy.cargoWeight || 0}<span className="text-sm font-normal text-muted-foreground ml-1">tons</span></p>
+              <p className="text-xs text-muted-foreground">Load</p>
             </div>
             <div className="p-4 bg-card rounded-lg border border-border">
               <Calendar className="w-5 h-5 text-primary mb-2" />
@@ -172,7 +179,7 @@ export const ConvoyDetailDialog = ({ convoy, open, onOpenChange }: ConvoyDetailD
                   </div>
                   <div className="flex-1">
                     <p className="font-medium">{checkpoint.name}</p>
-                    <p className="text-sm text-muted-foreground">{checkpoint.location}</p>
+                    {checkpoint.location && <p className="text-sm text-muted-foreground">{checkpoint.location}</p>}
                   </div>
                   <div className="text-right">
                     <p className="text-sm">
@@ -207,6 +214,23 @@ export const ConvoyDetailDialog = ({ convoy, open, onOpenChange }: ConvoyDetailD
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Close
             </Button>
+            {onEdit && (
+                <Button variant="outline" onClick={() => onEdit(convoy)}>
+                    Edit
+                </Button>
+            )}
+            {onDelete && (
+                <Button 
+                    variant="destructive" 
+                    onClick={() => {
+                        if (confirm("Are you sure you want to delete this convoy?")) {
+                            onDelete(convoy.id);
+                        }
+                    }}
+                >
+                    Delete
+                </Button>
+            )}
             <Button variant="hero">
               Track on Map
             </Button>

@@ -21,4 +21,18 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+# Python
+venv/
+__pycache__/
+backend/__pycache__/
+*.pyc
+
+# Environment
+.env
+firebase_key.json
+*-firebase-adminsdk-*.json
+*.json
+!package.json
+!tsconfig.json
+
+

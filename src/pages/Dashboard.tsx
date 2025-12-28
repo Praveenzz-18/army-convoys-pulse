@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { ConvoyCard } from '@/components/convoy/ConvoyCard';
 import { ConvoyDetailDialog } from '@/components/convoy/ConvoyDetailDialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { mockConvoys, mockNotifications, dashboardStats } from '@/data/mockData';
-import { Convoy } from '@/types/convoy';
+import { Card, CardContent } from '@/components/ui/card';
+import { mockNotifications } from '@/data/mockData';
+import { Convoy, ConvoyStatus } from '@/types/convoy';
+import { convoyService } from '@/services/convoyService';
 import {
   Route,
   Truck,
@@ -23,9 +24,94 @@ import { Link } from 'react-router-dom';
 const Dashboard = () => {
   const [selectedConvoy, setSelectedConvoy] = useState<Convoy | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [convoys, setConvoys] = useState<Convoy[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const activeConvoys = mockConvoys.filter(c => c.status === 'active' || c.status === 'delayed');
+  useEffect(() => {
+    const fetchConvoys = async () => {
+      try {
+        const data = await convoyService.getConvoys();
+        
+        // Map API response to Frontend Model (Mirrors Convoys.tsx logic)
+        const mappedConvoys: Convoy[] = data.map((c: any) => {
+            const mapStatus = (s: string): ConvoyStatus => {
+                const lower = s?.toLowerCase();
+                if (['active', 'pending', 'delayed', 'completed'].includes(lower)) return lower as ConvoyStatus;
+                if (lower === 'planned') return 'pending';
+                if (lower === 'in transit') return 'active';
+                return 'pending';
+            };
+
+            const mapPriority = (p: string): any => {
+                 const lower = p?.toLowerCase();
+                 if (['high', 'medium', 'low'].includes(lower)) return lower;
+                 return 'medium';
+            };
+
+            return {
+            id: c.id,
+            name: c.name,
+            origin: c.origin,
+            destination: c.destination,
+            status: mapStatus(c.status),
+            priority: mapPriority(c.priority),
+            departureTime: c.start_time,
+            estimatedArrival: (() => {
+                try {
+                    const start = new Date(c.start_time);
+                    if (isNaN(start.getTime())) return new Date().toISOString(); 
+                    return new Date(start.getTime() + 4 * 60 * 60 * 1000).toISOString();
+                } catch (e) {
+                    return new Date().toISOString();
+                }
+            })(),
+            vehicleCount: c.vehicle_count || (c.vehicles ? c.vehicles.length : 0),
+            personnelCount: c.personnel_count || 0,
+            commander: c.commander || "Unknown",
+            unit: c.unit || "Logistics",
+            cargo: c.cargo,
+            cargoWeight: c.cargo_load || 0,
+            notes: c.notes,
+            checkpoints: (c.checkpoints || []).map((cp: any, idx: number) => {
+                const isString = typeof cp === 'string';
+                return {
+                    id: isString ? `cp-${idx}` : (cp.id || `cp-${idx}`),
+                    name: isString ? cp : (cp.name || `Checkpoint ${idx + 1}`),
+                    location: isString ? "" : (cp.location || "Unknown"),
+                    coordinates: (isString ? null : cp.coordinates) || { lat: 0, lng: 0 },
+                    estimatedTime: (isString ? null : cp.estimatedTime) || new Date().toISOString(),
+                    status: (isString ? 'pending' : (cp.status || 'pending'))
+                };
+            }),
+            progress: 0,
+            createdAt: new Date().toISOString(), 
+            updatedAt: new Date().toISOString()
+          };
+        });
+        setConvoys(mappedConvoys);
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchConvoys();
+  }, []);
+
+  const activeConvoys = convoys.filter(c => c.status === 'active' || c.status === 'delayed');
   const recentNotifications = mockNotifications.slice(0, 4);
+
+  // Dynamic Stats Calculation
+  const dashboardStats = {
+      activeConvoys: convoys.filter(c => c.status === 'active').length,
+      totalVehicles: convoys.reduce((acc, c) => acc + c.vehicleCount, 0),
+      totalPersonnel: convoys.reduce((acc, c) => acc + c.personnelCount, 0),
+      onTimeDelivery: 98.5, // Mocked for now
+      completedMissions: convoys.filter(c => c.status === 'completed').length,
+      totalDistance: 12500, // Mocked
+      fuelEfficiency: 92, // Mocked
+      maintenanceScheduled: 3 // Mocked
+  };
 
   const handleConvoyClick = (convoy: Convoy) => {
     setSelectedConvoy(convoy);
@@ -40,14 +126,14 @@ const Dashboard = () => {
           title="Active Convoys"
           value={dashboardStats.activeConvoys}
           icon={Route}
-          change="+2 from yesterday"
+          change={convoys.length > 0 ? "Tracking real-time" : "No active missions"}
           changeType="positive"
         />
         <StatsCard
           title="Total Vehicles"
           value={dashboardStats.totalVehicles}
           icon={Truck}
-          change="3 in maintenance"
+          change="Deployed fleet"
           changeType="neutral"
         />
         <StatsCard
@@ -110,13 +196,19 @@ const Dashboard = () => {
             </Link>
           </div>
           <div className="grid gap-4">
-            {activeConvoys.slice(0, 3).map((convoy) => (
-              <ConvoyCard
-                key={convoy.id}
-                convoy={convoy}
-                onClick={() => handleConvoyClick(convoy)}
-              />
-            ))}
+            {loading ? (
+                 <div className="text-center py-8 text-muted-foreground">Loading specific operations data...</div>
+            ) : activeConvoys.length === 0 ? (
+                 <div className="text-center py-8 text-muted-foreground">No active convoys currently.</div>
+            ) : (
+                activeConvoys.slice(0, 3).map((convoy) => (
+                <ConvoyCard
+                    key={convoy.id}
+                    convoy={convoy}
+                    onClick={() => handleConvoyClick(convoy)}
+                />
+                ))
+            )}
           </div>
         </div>
 

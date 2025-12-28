@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,18 +15,21 @@ interface CreateConvoyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConvoyCreated: (convoy: Convoy) => void;
+  convoyToEdit?: Convoy | null;
 }
 
-export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: CreateConvoyDialogProps) => {
+export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated, convoyToEdit }: CreateConvoyDialogProps) => {
   const { toast } = useToast();
   const { isAuthorized, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   
   const [formData, setFormData] = useState({
+    id: '', 
     name: '',
     origin: '',
     destination: '',
+    status: 'pending' as 'pending' | 'active' | 'completed' | 'delayed',
     priority: 'medium' as Priority,
     departureTime: '',
     vehicleCount: '',
@@ -34,10 +37,56 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
     commander: '',
     unit: '',
     cargo: '',
+    cargoWeight: '',
     notes: '',
   });
 
   const [checkpoints, setCheckpoints] = useState<{ name: string; location: string }[]>([]);
+
+  // Effect to population form when convoyToEdit changes
+  useEffect(() => {
+    if (convoyToEdit) {
+        setFormData({
+            id: convoyToEdit.id,
+            name: convoyToEdit.name,
+            origin: convoyToEdit.origin,
+            destination: convoyToEdit.destination,
+            status: convoyToEdit.status,
+            priority: convoyToEdit.priority,
+            departureTime: convoyToEdit.departureTime,
+            vehicleCount: convoyToEdit.vehicleCount.toString(),
+            personnelCount: convoyToEdit.personnelCount.toString(),
+            commander: convoyToEdit.commander,
+            unit: convoyToEdit.unit,
+            cargo: convoyToEdit.cargo || '',
+            cargoWeight: (convoyToEdit.cargoWeight || 0).toString(),
+            notes: convoyToEdit.notes || '',
+        });
+        setCheckpoints(convoyToEdit.checkpoints.map(cp => ({
+            name: cp.name,
+            location: 'location' in cp ? (cp as any).location : ''
+        })));
+    } else {
+        // Reset if null (Create mode)
+        setFormData({
+            id: '',
+            name: '',
+            origin: '',
+            destination: '',
+            status: 'pending',
+            priority: 'medium',
+            departureTime: '',
+            vehicleCount: '',
+            personnelCount: '',
+            commander: '',
+            unit: '',
+            cargo: '',
+            cargoWeight: '',
+            notes: '',
+        });
+        setCheckpoints([]);
+    }
+  }, [convoyToEdit, open]); // Re-run when opening or changing target
 
   const canCreate = isAuthenticated && isAuthorized(['admin', 'commander']);
 
@@ -64,61 +113,87 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
 
     setLoading(true);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    setLoading(true);
 
-    const newConvoy: Convoy = {
-      id: `CNV-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`,
-      name: formData.name,
-      origin: formData.origin,
-      destination: formData.destination,
-      status: 'pending',
-      priority: formData.priority,
-      departureTime: formData.departureTime,
-      estimatedArrival: new Date(new Date(formData.departureTime).getTime() + 12 * 60 * 60 * 1000).toISOString(),
-      vehicleCount: parseInt(formData.vehicleCount) || 0,
-      personnelCount: parseInt(formData.personnelCount) || 0,
-      commander: formData.commander,
-      unit: formData.unit,
-      cargo: formData.cargo,
-      notes: formData.notes,
-      progress: 0,
-      checkpoints: checkpoints.map((cp, index) => ({
-        id: `CP-${index + 1}`,
-        name: cp.name,
-        location: cp.location,
-        coordinates: { lat: 0, lng: 0 },
-        estimatedTime: '',
-        status: 'pending' as const,
-      })),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      // Import service dynamically
+      const { convoyService } = await import('@/services/convoyService');
 
-    onConvoyCreated(newConvoy);
-    setLoading(false);
-    onOpenChange(false);
-    
-    // Reset form
-    setFormData({
-      name: '',
-      origin: '',
-      destination: '',
-      priority: 'medium',
-      departureTime: '',
-      vehicleCount: '',
-      personnelCount: '',
-      commander: '',
-      unit: '',
-      cargo: '',
-      notes: '',
-    });
-    setCheckpoints([]);
+      const payload = {
+        name: formData.name,
+        origin: formData.origin,
+        destination: formData.destination,
+        priority: formData.priority,
+        start_time: formData.departureTime,
+        status: formData.status,
+        
+        // Mapped fields
+        vehicle_count: parseInt(formData.vehicleCount) || 0,
+        personnel_count: parseInt(formData.personnelCount) || 0,
+        commander: formData.commander,
+        unit: formData.unit,
+        cargo: formData.cargo,
+        cargo_load: parseFloat(formData.cargoWeight) || 0,
+        notes: formData.notes,
+        checkpoints: checkpoints.map((cp, index) => ({
+             id: `cp-${Date.now()}-${index}`,
+             name: cp.name,
+             location: cp.location,
+             coordinates: { lat: 0, lng: 0 },
+             estimatedTime: new Date(new Date(formData.departureTime).getTime() + (index + 1) * 3600000).toISOString(),
+             status: 'pending'
+        })),
+      };
 
-    toast({
-      title: 'Convoy Created',
-      description: `${newConvoy.name} has been successfully created and scheduled.`,
-    });
+      let resultConvoy;
+
+      if (convoyToEdit) {
+          // Check if ID is being changed
+          if (formData.id && formData.id !== convoyToEdit.id) {
+               // ID Change Handling: Create new -> Delete old
+               const createPayload = { ...payload, id: formData.id };
+               const createdData = await convoyService.createConvoy(createPayload);
+               
+               // Delete old record
+               await convoyService.deleteConvoy(convoyToEdit.id);
+               
+               resultConvoy = { ...createdData, departureTime: createdData.start_time, status: payload.status, checkpoints: []};
+               toast({ title: 'Convoy ID Updated', description: `Renamed from ${convoyToEdit.id} to ${formData.id}.` });
+          } else {
+               // Standard Update (Same ID)
+               await convoyService.updateConvoy(convoyToEdit.id, payload);
+               resultConvoy = { ...convoyToEdit, ...formData, ...payload, departureTime: payload.start_time };
+               toast({ title: 'Convoy Updated', description: `${formData.name} updated successfully.` });
+          }
+      } else {
+          // Create Mode
+          const createPayload = { ...payload, id: formData.id || undefined };
+          const createdData = await convoyService.createConvoy(createPayload);
+           // Simple mapping for immediate UI feedback (simulated)
+           resultConvoy = { 
+               ...createdData, 
+               departureTime: createdData.start_time,
+               status: 'pending',
+               checkpoints: [] 
+            };
+           toast({ title: 'Convoy Created', description: `${formData.name} created successfully.` });
+      }
+
+      onConvoyCreated(resultConvoy as Convoy); // Triggers refresh
+      onOpenChange(false);
+      
+      // Form reset handled by effect
+
+    } catch (error) {
+      console.error("Failed to save convoy:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save convoy. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const addCheckpoint = () => {
@@ -196,11 +271,20 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl">Create New Convoy</DialogTitle>
+          <DialogTitle className="text-xl">{convoyToEdit ? 'Edit Convoy' : 'Create New Convoy'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <Label htmlFor="id">Convoy ID (Optional)</Label>
+              <Input
+                id="id"
+                placeholder="Leave empty for auto-generation"
+                value={formData.id}
+                onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+              />
+            </div>
             <div className="col-span-2">
               <Label htmlFor="name">Mission Name *</Label>
               <Input
@@ -263,6 +347,24 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="status">Status</Label>
+              <Select 
+                value={formData.status} 
+                onValueChange={(v: 'pending' | 'active' | 'completed' | 'delayed') => setFormData({ ...formData, status: v })}
+                disabled={!convoyToEdit} // Optional: Disable for new convoys if you want forcing pending, but user asked to move to active so let's allow it
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="active">Active (In Transit)</SelectItem>
+                  <SelectItem value="delayed">Delayed</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Resources */}
@@ -318,6 +420,17 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
             />
           </div>
 
+          <div>
+            <Label htmlFor="cargoWeight">Cargo Load (Tons)</Label>
+            <Input
+              id="cargoWeight"
+              type="number"
+              placeholder="0.0"
+              value={formData.cargoWeight}
+              onChange={(e) => setFormData({ ...formData, cargoWeight: e.target.value })}
+            />
+          </div>
+
           {/* Checkpoints */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -370,7 +483,7 @@ export const CreateConvoyDialog = ({ open, onOpenChange, onConvoyCreated }: Crea
               Cancel
             </Button>
             <Button type="submit" variant="hero" disabled={loading}>
-              {loading ? 'Creating...' : 'Create Convoy'}
+              {loading ? (convoyToEdit ? 'Updating...' : 'Creating...') : (convoyToEdit ? 'Update Convoy' : 'Create Convoy')}
             </Button>
           </div>
         </form>
