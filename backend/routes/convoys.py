@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from database.firebase_db import convoy_db
 from datetime import datetime
+from middleware.auth import get_user_id
 
 router = APIRouter()
 
@@ -51,8 +52,10 @@ class ConvoyResponse(BaseModel):
 
 
 @router.post("/", response_model=ConvoyResponse)
-def create_convoy(convoy: ConvoyCreate):
-    convoy_id = convoy_db.create(convoy.model_dump())
+def create_convoy(convoy: ConvoyCreate, user_id: str = Depends(get_user_id)):
+    data = convoy.model_dump()
+    data['user_id'] = user_id
+    convoy_id = convoy_db.create(data)
     convoy_data = convoy_db.get(convoy_id)
     convoy_data['id'] = convoy_id
     return ConvoyResponse(**convoy_data)
@@ -60,8 +63,8 @@ def create_convoy(convoy: ConvoyCreate):
 
 
 @router.get("/", response_model=List[ConvoyResponse])
-def get_convoys(status: Optional[str] = None, origin: Optional[str] = None):
-    all_convoys = convoy_db.get_all()
+def get_convoys(status: Optional[str] = None, origin: Optional[str] = None, user_id: str = Depends(get_user_id)):
+    all_convoys = convoy_db.get_all(user_id=user_id)
     filtered = []
     for c in all_convoys:
         if status and c.get('status') != status:
@@ -80,12 +83,22 @@ def get_convoy(convoy_id: str):
     return ConvoyResponse(**data)
 
 @router.put("/{convoy_id}")
-def update_convoy(convoy_id: str, update_data: dict):
+def update_convoy(convoy_id: str, update_data: dict, user_id: str = Depends(get_user_id)):
+    # Verify ownership before update
+    existing = convoy_db.get(convoy_id)
+    if not existing or existing.get('user_id') != user_id:
+        raise HTTPException(403, "Not authorized to update this convoy")
+    
     convoy_db.update(convoy_id, update_data)
     return {"message": "Updated"}
 
 @router.delete("/{convoy_id}")
-def delete_convoy(convoy_id: str):
+def delete_convoy(convoy_id: str, user_id: str = Depends(get_user_id)):
+    # Verify ownership before delete
+    existing = convoy_db.get(convoy_id)
+    if not existing or existing.get('user_id') != user_id:
+        raise HTTPException(403, "Not authorized to delete this convoy")
+        
     convoy_db.delete(convoy_id)
     return {"message": "Deleted"}
    

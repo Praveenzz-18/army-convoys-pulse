@@ -17,7 +17,7 @@ const LiveMap = () => {
   useEffect(() => {
     // Real-time listener for convoys in Firestore
     const convoysRef = collection(db, 'convoys');
-    const q = query(convoysRef, where('status', 'in', ['active', 'delayed']));
+    const q = query(convoysRef, where('status', 'in', ['active', 'delayed', 'pending']));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const updatedConvoys = snapshot.docs.map(doc => ({
@@ -27,11 +27,10 @@ const LiveMap = () => {
       
       if (updatedConvoys.length > 0) {
         setConvoys(prev => {
-          // Merge real data with mock for demo purposes if needed
           const merged = [...prev];
           updatedConvoys.forEach(uc => {
             const index = merged.findIndex(c => c.id === uc.id);
-            if (index !== -1) merged[index] = uc;
+            if (index !== -1) merged[index] = { ...merged[index], ...uc };
             else merged.push(uc);
           });
           return merged;
@@ -41,7 +40,37 @@ const LiveMap = () => {
       console.warn("Firestore error (using mock data):", error);
     });
 
-    return () => unsubscribe();
+    // --- WebSocket Real-time Tracking ---
+    const socket = new WebSocket('ws://localhost:8000/api/track/ws');
+
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        // Expecting: { convoy_id: string, lat: number, lng: number }
+        if (data.convoy_id && data.lat && data.lng) {
+          setConvoys(prev => {
+            return prev.map(c => {
+              if (c.id === data.convoy_id) {
+                return {
+                  ...c,
+                  currentLocation: { lat: data.lat, lng: data.lng },
+                  status: data.status || c.status,
+                  progress: data.progress || c.progress
+                };
+              }
+              return c;
+            });
+          });
+        }
+      } catch (err) {
+        console.error("Error parsing tracking data:", err);
+      }
+    };
+
+    return () => {
+      unsubscribe();
+      socket.close();
+    };
   }, []);
 
   return (

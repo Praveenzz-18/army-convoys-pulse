@@ -12,9 +12,9 @@ if not firebase_admin._apps:
     try:
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
-        print("✅ Firebase Firestore initialized successfully.")
+        print("Firebase Firestore initialized successfully.")
     except Exception as e:
-        print(f"❌ Failed to initialize Firebase: {e}")
+        print(f"Failed to initialize Firebase: {e}")
 
 # Initialize Firestore Client
 db = firestore.client()
@@ -40,9 +40,12 @@ class ConvoyDB:
             _, doc_ref = self.collection.add(data)
             return doc_ref.id
     
-    def get_all(self):
+    def get_all(self, user_id=None):
         # stream() gets all documents
-        docs = self.collection.stream()
+        if user_id:
+            docs = self.collection.where('user_id', '==', user_id).stream()
+        else:
+            docs = self.collection.stream()
         return [{**doc.to_dict(), 'id': doc.id} for doc in docs]
     
     def get(self, convoy_id):
